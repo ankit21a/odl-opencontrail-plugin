@@ -5,11 +5,11 @@
     <parent>
         <groupId>org.opendaylight.opencontrail</groupId>
         <artifactId>commons.opencontrail</artifactId>
-        <version>1.4.2-SNAPSHOT</version>
+        <version>0.1</version>
         <relativePath>../commons/parent</relativePath>
     </parent>
     <artifactId>opencontrail.neutron</artifactId>
-    <version>0.4.2-SNAPSHOT</version>
+    <version>0.1</version>
     <packaging>bundle</packaging>
     <repositories>
         <repository>
