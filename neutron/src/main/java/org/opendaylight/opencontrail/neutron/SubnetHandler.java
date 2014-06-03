@@ -10,15 +10,21 @@ package org.opendaylight.opencontrail.neutron;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.Iterator;
 import java.util.List;
+
 import net.juniper.contrail.api.ApiConnector;
 import net.juniper.contrail.api.ObjectReference;
 import net.juniper.contrail.api.types.NetworkIpam;
 import net.juniper.contrail.api.types.SubnetType;
 import net.juniper.contrail.api.types.VirtualNetwork;
 import net.juniper.contrail.api.types.VnSubnetsType;
+
+import org.apache.commons.net.util.SubnetUtils;
+import org.apache.commons.net.util.SubnetUtils.SubnetInfo;
 import org.opendaylight.controller.networkconfig.neutron.INeutronSubnetAware;
 import org.opendaylight.controller.networkconfig.neutron.NeutronSubnet;
+import org.opendaylight.controller.networkconfig.neutron.NeutronSubnet_IPAllocationPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,10 +55,19 @@ public class SubnetHandler implements INeutronSubnetAware {
             LOGGER.error("Neutron Subnet can't be null..");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
+        if (subnet.getCidr() == null || ("").equals(subnet.getCidr())) {
+            LOGGER.info("Subnet Cidr can not be empty or null...");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
+        boolean isvalidGateway = validGatewayIP(subnet, subnet.getGatewayIP());
+        if (!isvalidGateway) {
+            LOGGER.error("Incorrect gateway IP....");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
         try {
-            virtualnetwork = getNetwork(subnet);
+            virtualnetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, subnet.getNetworkUUID());
         } catch (IOException e) {
-            LOGGER.error("Exception :     " + e);
+            LOGGER.error("Exception : " + e);
             return HttpURLConnection.HTTP_INTERNAL_ERROR;
         }
         if (virtualnetwork == null) {
@@ -60,51 +75,41 @@ public class SubnetHandler implements INeutronSubnetAware {
             return HttpURLConnection.HTTP_FORBIDDEN;
         } else {
             try {
-                List<ObjectReference<VnSubnetsType>> ipamRefs = virtualnetwork.getNetworkIpam();
-                if (ipamRefs != null) {
-                    int result = subnetExists(ipamRefs, subnet);
-                    if (result != 0) {
-                        return result;
-                    }
+                boolean ifSubnetExist = subnetExists(virtualnetwork.getNetworkIpam(), subnet);
+                if (ifSubnetExist) {
+                    LOGGER.error("The subnet already exists..");
+                    return HttpURLConnection.HTTP_FORBIDDEN;
                 }
-            } catch (Exception e) {
-                LOGGER.error("Exception :     " + e);
-                return HttpURLConnection.HTTP_INTERNAL_ERROR;
-            }
-            try {
                 return createSubnet(subnet, virtualnetwork);
             } catch (IOException ie) {
                 LOGGER.error("IOException:     " + ie);
                 return HttpURLConnection.HTTP_INTERNAL_ERROR;
             } catch (Exception e) {
-                LOGGER.error("Exception:     " + e);
+                LOGGER.error("Exception:  " + e);
                 return HttpURLConnection.HTTP_INTERNAL_ERROR;
             }
         }
     }
 
-    private int subnetExists(List<ObjectReference<VnSubnetsType>> ipamRefs, NeutronSubnet subnet) {
-        for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
-            VnSubnetsType vnSubnetsType = ref.getAttr();
-            if (vnSubnetsType != null) {
-                List<VnSubnetsType.IpamSubnetType> subnets = vnSubnetsType.getIpamSubnets();
-                if (subnets != null) {
-                    if (subnet.getCidr() == null) {
-                        LOGGER.error("CIDR can't be null");
-                        return HttpURLConnection.HTTP_BAD_REQUEST;
-                    }
-                    for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
-                        String[] ipPrefix = getIpPrefix(subnet);
-                        Boolean doesSubnetExist = subnetValue.getSubnet().getIpPrefix().matches(ipPrefix[0]);
-                        if (doesSubnetExist) {
-                            LOGGER.error("The subnet already exists..");
-                            return HttpURLConnection.HTTP_FORBIDDEN;
+    private boolean subnetExists(List<ObjectReference<VnSubnetsType>> ipamRefs, NeutronSubnet subnet) {
+        if (ipamRefs != null) {
+            for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
+                VnSubnetsType vnSubnetsType = ref.getAttr();
+                if (vnSubnetsType != null) {
+                    List<VnSubnetsType.IpamSubnetType> subnets = vnSubnetsType.getIpamSubnets();
+                    if (subnets != null) {
+                        for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
+                            String[] ipPrefix = getIpPrefix(subnet);
+                            Boolean doesSubnetExist = subnetValue.getSubnet().getIpPrefix().matches(ipPrefix[0]);
+                            if (doesSubnetExist) {
+                                return doesSubnetExist;
+                            }
                         }
                     }
                 }
             }
         }
-        return 0;
+        return false;
     }
 
     /**
@@ -118,24 +123,12 @@ public class SubnetHandler implements INeutronSubnetAware {
         VirtualNetwork virtualNetwork = null;
         try {
             virtualNetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, subnet.getNetworkUUID());
-            List<ObjectReference<VnSubnetsType>> ipamRefs = virtualNetwork.getNetworkIpam();
-            if (ipamRefs != null) {
-                for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
-                    VnSubnetsType vnSubnetsType = ref.getAttr();
-                    if (vnSubnetsType != null) {
-                        List<VnSubnetsType.IpamSubnetType> subnets = vnSubnetsType.getIpamSubnets();
-                        for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
-                            String[] ipPrefix = getIpPrefix(subnet);
-                            boolean doesSubnetExist = subnetValue.getSubnet().getIpPrefix().matches(ipPrefix[0]);
-                            if (doesSubnetExist) {
-                                LOGGER.info("Subnet creation verified...");
-                            }
-                        }
-                    }
-                }
+            boolean ifSubnetExists = subnetExists(virtualNetwork.getNetworkIpam(), subnet);
+            if (ifSubnetExists) {
+                LOGGER.info("Subnet creation verified...");
             }
         } catch (Exception e) {
-            LOGGER.error("Exception :     " + e);
+            LOGGER.error("Exception :    " + e);
         }
     }
 
@@ -178,14 +171,18 @@ public class SubnetHandler implements INeutronSubnetAware {
         VnSubnetsType vnSubnetsType = new VnSubnetsType();
         SubnetType subnetType = new SubnetType();
         try {
-            ipPrefix = getIpPrefix(subnet);
+            if (subnet.getCidr().contains("/")) {
+                ipPrefix = subnet.getCidr().split("/");
+            } else {
+                throw new IllegalArgumentException("String " + subnet.getCidr() + " not in correct format..");
+            }
             // Find default-network-ipam
             String ipamId = apiConnector.findByName(NetworkIpam.class, null, "default-network-ipam");
             ipam = (NetworkIpam) apiConnector.findById(NetworkIpam.class, ipamId);
         } catch (IOException ex) {
-            LOGGER.error("IOException :    " + ex);
+            LOGGER.error("IOException :     " + ex);
         } catch (Exception ex) {
-            LOGGER.error("Exception :   " + ex);
+            LOGGER.error("Exception :      " + ex);
         }
         if (ipPrefix != null) {
             subnetType.setIpPrefix(ipPrefix[0]);
@@ -195,7 +192,7 @@ public class SubnetHandler implements INeutronSubnetAware {
                     vnSubnetsType = ref.getAttr();
                 }
             }
-            vnSubnetsType.addIpamSubnets(subnetType, subnet.getGatewayIP());
+            vnSubnetsType.addIpamSubnets(subnetType, subnet.getGatewayIP(), subnet.getSubnetUUID());
             vn.setNetworkIpam(ipam, vnSubnetsType);
         }
         return vn;
@@ -232,8 +229,57 @@ public class SubnetHandler implements INeutronSubnetAware {
      * @return A HTTP status code to the update request.
      */
     @Override
-    public int canUpdateSubnet(NeutronSubnet delta, NeutronSubnet original) {
-        return HttpURLConnection.HTTP_CREATED;
+    public int canUpdateSubnet(NeutronSubnet deltaSubnet, NeutronSubnet originalSubnet) {
+        if (deltaSubnet == null || originalSubnet == null) {
+            LOGGER.error("Neutron Subnets can't be null..");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
+        if (deltaSubnet.getGatewayIP() == null || ("").equals(deltaSubnet.getGatewayIP().toString())) {
+            LOGGER.error("Gateway IP can't be empty/null`..");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
+        boolean isvalidGateway = validGatewayIP(originalSubnet, deltaSubnet.getGatewayIP());
+        if (!isvalidGateway) {
+            LOGGER.error("Incorrect gateway IP....");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
+        apiConnector = Activator.apiConnector;
+        try {
+            boolean ifSubnetExist = false;
+            VirtualNetwork virtualnetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, originalSubnet.getNetworkUUID());
+            List<ObjectReference<VnSubnetsType>> ipamRefs = virtualnetwork.getNetworkIpam();
+            if (ipamRefs != null) {
+                for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
+                    VnSubnetsType vnSubnetsType = ref.getAttr();
+                    if (vnSubnetsType != null) {
+                        List<VnSubnetsType.IpamSubnetType> subnets = vnSubnetsType.getIpamSubnets();
+                        for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
+                            boolean doesSubnetExist = subnetValue.getSubnetUuid().matches(originalSubnet.getSubnetUUID());
+                            if (doesSubnetExist) {
+                                subnetValue.setDefaultGateway(deltaSubnet.getGatewayIP());
+                                ifSubnetExist = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (ifSubnetExist) {
+                boolean subnetUpdate = apiConnector.update(virtualnetwork);
+                if (!subnetUpdate) {
+                    LOGGER.warn("Subnet upadtion failed..");
+                    return HttpURLConnection.HTTP_INTERNAL_ERROR;
+                } else {
+                    LOGGER.info(" Subnet " + originalSubnet.getCidr() + " sucessfully updated with gateway IP : " + originalSubnet.getGatewayIP());
+                    return HttpURLConnection.HTTP_OK;
+                }
+            } else {
+                LOGGER.warn("Subnet upadtion failed..");
+                return HttpURLConnection.HTTP_INTERNAL_ERROR;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Exception :     " + e);
+            return HttpURLConnection.HTTP_INTERNAL_ERROR;
+        }
     }
 
     /**
@@ -244,21 +290,149 @@ public class SubnetHandler implements INeutronSubnetAware {
      */
     @Override
     public void neutronSubnetUpdated(NeutronSubnet subnet) {
-        // TODO Auto-generated method stub
+        try {
+            boolean ifSubnetExist = false;
+            VirtualNetwork virtualnetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, subnet.getNetworkUUID());
+            List<ObjectReference<VnSubnetsType>> ipamRefs = virtualnetwork.getNetworkIpam();
+            if (ipamRefs != null) {
+                for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
+                    VnSubnetsType vnSubnetsType = ref.getAttr();
+                    if (vnSubnetsType != null) {
+                        List<VnSubnetsType.IpamSubnetType> subnets = vnSubnetsType.getIpamSubnets();
+                        for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
+                            boolean doesSubnetExist = subnetValue.getDefaultGateway().matches(subnet.getGatewayIP());
+                            if (doesSubnetExist) {
+                                ifSubnetExist = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (ifSubnetExist) {
+                LOGGER.info("Subnet upadtion verified..");
+            } else {
+                LOGGER.warn("Subnet upadtion failed..");
+            }
+        } catch (Exception ex) {
+            LOGGER.error("Exception :     " + ex);
+        }
     }
 
     /**
      * Invoked when a subnet deletion is requested to indicate if the specified
-     * subnet can be deleted.
+     * subnet can be deleted and then delete the subnet.
      *
      * @param subnet
      *            An instance of the Neutron Subnet object to be deleted.
+     *
      * @return A HTTP status code to the deletion request.
      */
     @Override
     public int canDeleteSubnet(NeutronSubnet subnet) {
-        // TODO Auto-generated method stub
-        return HttpURLConnection.HTTP_CREATED;
+        apiConnector = Activator.apiConnector;
+        VirtualNetwork virtualNetwork = null;
+        try {
+            virtualNetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, subnet.getNetworkUUID());
+            boolean subnetDelete = deleteSubnet(subnet, virtualNetwork);
+            if (!subnetDelete) {
+                LOGGER.error("Subnet deletion failed..");
+                return HttpURLConnection.HTTP_INTERNAL_ERROR;
+            } else {
+                LOGGER.info("Subnet " + subnet.getCidr() + " sucessfully deleted from network  : " + virtualNetwork.getUuid());
+                return HttpURLConnection.HTTP_NO_CONTENT;
+            }
+        } catch (Exception e) {
+            LOGGER.error("Exception :     ", e.getMessage());
+            return HttpURLConnection.HTTP_INTERNAL_ERROR;
+        }
+    }
+
+    private boolean validGatewayIP(NeutronSubnet subnet, String ipAddress) {
+        try {
+
+            SubnetUtils util = new SubnetUtils(subnet.getCidr());
+            SubnetInfo info = util.getInfo();
+            boolean inRange = info.isInRange(ipAddress);
+            if (!inRange) {
+                return false;
+            } else {
+                // ip available in allocation pool
+                Iterator<NeutronSubnet_IPAllocationPool> i = subnet.getAllocationPools().iterator();
+                while (i.hasNext()) {
+                    NeutronSubnet_IPAllocationPool pool = i.next();
+                    if (pool.contains(ipAddress)) {
+                        return true;
+                    }
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            LOGGER.error("Exception  :  " + e);
+            return false;
+        }
+    }
+
+    /**
+     * Invoked to delete a specified subnet.
+     *
+     * @param subnet
+     *            An instance of the Neutron Subnet object to be deleted.
+     *
+     * @param virtualNetwork
+     *            An instance of the Virtual network object.
+     *
+     * @return A HTTP status code to the deletion request.
+     */
+    private boolean deleteSubnet(NeutronSubnet subnet, VirtualNetwork virtualNetwork) {
+        try {
+            VnSubnetsType.IpamSubnetType subnetVmType = null;
+            VnSubnetsType vnSubnetsType = null;
+            List<VnSubnetsType.IpamSubnetType> subnets = null;
+            List<ObjectReference<VnSubnetsType>> ipamRefs = virtualNetwork.getNetworkIpam();
+            if (ipamRefs != null) {
+                for (ObjectReference<VnSubnetsType> ref : ipamRefs) {
+                    vnSubnetsType = ref.getAttr();
+                    if (vnSubnetsType != null) {
+                        subnets = vnSubnetsType.getIpamSubnets();
+                        for (VnSubnetsType.IpamSubnetType subnetValue : subnets) {
+                            String[] ipPrefix = getIpPrefix(subnet);
+                            boolean doesSubnetExist = subnetValue.getSubnet().getIpPrefix().matches(ipPrefix[0]);
+                            if (doesSubnetExist) {
+                                subnetVmType = subnetValue;
+                            }
+                        }
+                    }
+                }
+                vnSubnetsType.clearIpamSubnets();
+                for (VnSubnetsType.IpamSubnetType subnetVal : subnets) {
+                    if (!subnetVal.getSubnet().getIpPrefix().matches(subnetVmType.getSubnet().getIpPrefix())) {
+                        vnSubnetsType.addIpamSubnets(subnetVal);
+                    }
+                }
+                if (vnSubnetsType.getIpamSubnets() != null) {
+                    virtualNetwork.clearNetworkIpam();
+                    String ipamId = apiConnector.findByName(NetworkIpam.class, null, "default-network-ipam");
+                    NetworkIpam ipam = (NetworkIpam) apiConnector.findById(NetworkIpam.class, ipamId);
+                    virtualNetwork.addNetworkIpam(ipam, vnSubnetsType);
+                } else {
+                    virtualNetwork.clearNetworkIpam();
+                    NetworkIpam networkIpam = new NetworkIpam();
+                    networkIpam.setParent(null);
+                    networkIpam.setName(null);
+                    virtualNetwork.setNetworkIpam(networkIpam, null);
+                }
+                return apiConnector.update(virtualNetwork);
+            } else {
+                LOGGER.error("Subnet deletion failed...");
+                return false;
+            }
+        } catch (IOException ioEx) {
+            LOGGER.error("Exception     : " + ioEx);
+            return false;
+        } catch (Exception ex) {
+            LOGGER.error("Exception     : " + ex);
+            return false;
+        }
     }
 
     /**
@@ -269,23 +443,16 @@ public class SubnetHandler implements INeutronSubnetAware {
      */
     @Override
     public void neutronSubnetDeleted(NeutronSubnet subnet) {
-        // TODO Auto-generated method stub
-    }
-
-    /**
-     * Invoked to get the virtualNetwork object.
-     *
-     * @param subnet
-     *            An instance of new Neutron Subnet object.
-     * @param virtualNetwork
-     *            An instance of new virtualNetwork object.
-     *
-     * @return {@link VirtualNetwork}
-     */
-    VirtualNetwork getNetwork(NeutronSubnet subnet) throws IOException {
-        VirtualNetwork virtualNetwork = new VirtualNetwork();
-        String networkUuid = subnet.getNetworkUUID();
-        virtualNetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, networkUuid);
-        return virtualNetwork;
+        try {
+            VirtualNetwork virtualNetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, subnet.getNetworkUUID());
+            boolean ifSubnetExist = subnetExists(virtualNetwork.getNetworkIpam(), subnet);
+            if (!ifSubnetExist) {
+                LOGGER.info("Subnet deletion verified..");
+            } else {
+                LOGGER.warn("Subnet deletion failed..");
+            }
+        } catch (Exception ex) {
+            LOGGER.error("Exception :    " + ex);
+        }
     }
 }

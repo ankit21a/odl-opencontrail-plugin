@@ -46,7 +46,12 @@ public class Activator extends ComponentActivatorAbstractBase {
     public ApiConnector getApiConnection() {
         String ipAddress = System.getProperty("opencontrail.apiserver.ipaddress");
         String port = System.getProperty("opencontrail.apiserver.port");
-        int portNumber = Integer.parseInt(port);
+        int portNumber = 0;
+        try {
+            portNumber = Integer.parseInt(port);
+        } catch (Exception ex) {
+            LOGGER.error("Missing entry in Config file of Opendaylight", ex);
+        }
         apiConnector = ApiConnectorFactory.build(ipAddress, portNumber);
         return apiConnector;
     }

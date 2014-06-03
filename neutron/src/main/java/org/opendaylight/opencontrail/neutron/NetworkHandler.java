@@ -13,6 +13,7 @@ import java.net.HttpURLConnection;
 import java.util.UUID;
 
 import net.juniper.contrail.api.ApiConnector;
+import net.juniper.contrail.api.types.Project;
 import net.juniper.contrail.api.types.VirtualNetwork;
 
 import org.opendaylight.controller.networkconfig.neutron.INeutronNetworkAware;
@@ -50,6 +51,10 @@ public class NetworkHandler implements INeutronNetworkAware {
         if (network.getNetworkUUID() == null || network.getNetworkName() == null || network.getNetworkUUID().equals("")
                 || network.getNetworkName().equals("")) {
             LOGGER.error("Network UUID and Network Name can't be null/empty...");
+            return HttpURLConnection.HTTP_BAD_REQUEST;
+        }
+        if (network.getTenantID() == null) {
+            LOGGER.error("Network tenant Id can not be null");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
         try {
@@ -93,13 +98,34 @@ public class NetworkHandler implements INeutronNetworkAware {
     private int createNetwork(NeutronNetwork network) throws IOException {
         VirtualNetwork virtualNetwork = null;
         String networkUUID = null;
+        String projectUUID = null;
         try {
             networkUUID = UUID.fromString(network.getNetworkUUID()).toString();
+            projectUUID = network.getTenantID().toString();
+            if (!(projectUUID.contains("-"))) {
+                projectUUID = uuidFormater(projectUUID);
+            }
+            projectUUID = UUID.fromString(projectUUID).toString();
+            LOGGER.info("projectUUID 2  " + projectUUID);
         } catch (Exception ex) {
-            LOGGER.error("networkUUID input incorrect", ex);
+            LOGGER.error("UUID input incorrect", ex);
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
         virtualNetwork = (VirtualNetwork) apiConnector.findById(VirtualNetwork.class, networkUUID);
+        Project project = (Project) apiConnector.findById(Project.class, projectUUID);
+        if (project == null) {
+            try {
+                Thread.currentThread();
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                LOGGER.error("InterruptedException :    ", e);
+            }
+            project = (Project) apiConnector.findById(Project.class, projectUUID);
+            if (project == null) {
+                LOGGER.error("Could not find projectUUID...");
+                return HttpURLConnection.HTTP_NOT_FOUND;
+            }
+        }
         if (virtualNetwork != null) {
             LOGGER.warn("Network already exists..");
             return HttpURLConnection.HTTP_FORBIDDEN;
@@ -107,6 +133,7 @@ public class NetworkHandler implements INeutronNetworkAware {
         virtualNetwork = new VirtualNetwork();
         // map neutronNetwork to virtualNetwork
         virtualNetwork = mapNetworkProperties(network, virtualNetwork);
+        virtualNetwork.setParent(project);
         boolean networkCreated = apiConnector.create(virtualNetwork);
         LOGGER.debug("networkCreated:   " + networkCreated);
         if (!networkCreated) {
@@ -155,7 +182,7 @@ public class NetworkHandler implements INeutronNetworkAware {
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
         if (("").equals(deltaNetwork.getNetworkName())) {
-            LOGGER.error("Neutron Networks name can't be empty..");
+            LOGGER.error("Neutron Networks name to be update can't be empty..");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
         try {
@@ -276,5 +303,24 @@ public class NetworkHandler implements INeutronNetworkAware {
         } catch (Exception e) {
             LOGGER.error("Exception :   " + e);
         }
+    }
+
+    /**
+     * Invoked to format the UUID if UUID is not in correct format.
+     *
+     * @param String
+     *            An instance of UUID string.
+     *
+     * @return Correctly formated UUID string.
+     */
+    private String uuidFormater(String uuid) {
+        String uuidPattern = null;
+        String id1 = uuid.substring(0, 8);
+        String id2 = uuid.substring(8, 12);
+        String id3 = uuid.substring(12, 16);
+        String id4 = uuid.substring(16, 20);
+        String id5 = uuid.substring(20, 32);
+        uuidPattern = (id1 + "-" + id2 + "-" + id3 + "-" + id4 + "-" + id5);
+        return uuidPattern;
     }
 }
