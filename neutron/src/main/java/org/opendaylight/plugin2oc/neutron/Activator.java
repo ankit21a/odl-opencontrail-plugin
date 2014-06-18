@@ -6,7 +6,7 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  *
  */
-package org.opendaylight.opencontrail.neutron;
+package org.opendaylight.plugin2oc.neutron;
 
 import net.juniper.contrail.api.ApiConnector;
 import net.juniper.contrail.api.ApiConnectorFactory;
@@ -21,7 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * OSGi bundle activator for the opencontrail Neutron Interface.
+ * OSGi bundle activator for the plugin2oc Neutron Interface.
  */
 public class Activator extends ComponentActivatorAbstractBase {
     static ApiConnector apiConnector = null;
@@ -33,7 +33,7 @@ public class Activator extends ComponentActivatorAbstractBase {
      */
     @Override
     public void init() {
-        LOGGER.info("opencontrail Plugin service Registered");
+        LOGGER.info("plugin2oc Plugin service Registered");
         apiConnector = getApiConnection();
     }
 
@@ -44,8 +44,8 @@ public class Activator extends ComponentActivatorAbstractBase {
      * /opendaylight/src/main/resources/configuration/config.ini
      */
     public ApiConnector getApiConnection() {
-        String ipAddress = System.getProperty("opencontrail.apiserver.ipaddress");
-        String port = System.getProperty("opencontrail.apiserver.port");
+        String ipAddress = System.getProperty("plugin2oc.apiserver.ipaddress");
+        String port = System.getProperty("plugin2oc.apiserver.port");
         int portNumber = 0;
         try {
             portNumber = Integer.parseInt(port);

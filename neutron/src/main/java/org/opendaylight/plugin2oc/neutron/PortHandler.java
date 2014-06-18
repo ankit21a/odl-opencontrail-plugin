@@ -6,7 +6,7 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  *
  */
-package org.opendaylight.opencontrail.neutron;
+package org.opendaylight.plugin2oc.neutron;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -62,10 +62,6 @@ public class PortHandler implements INeutronPortAware {
             LOGGER.error("Port Device Id or Port Uuid can't be empty/null...");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
-        if (neutronPort.getName() == null || neutronPort.getName().equals("")) {
-            LOGGER.error("Port name can't be empty/null...");
-            return HttpURLConnection.HTTP_BAD_REQUEST;
-        }
         if (neutronPort.getTenantID() == null) {
             LOGGER.error("Tenant ID can't be null...");
             return HttpURLConnection.HTTP_BAD_REQUEST;
@@ -107,7 +103,7 @@ public class PortHandler implements INeutronPortAware {
         try {
             networkID = UUID.fromString(neutronPort.getNetworkUUID()).toString();
             portID = UUID.fromString(neutronPort.getID()).toString();
-            if (neutronPort.getDeviceID() != null) {
+            if (neutronPort.getDeviceID() != null && !(("").equals(neutronPort.getDeviceID()))) {
                 if (!(deviceID.contains("-"))) {
                     deviceID = uuidFormater(deviceID);
                 }
@@ -128,7 +124,7 @@ public class PortHandler implements INeutronPortAware {
                 LOGGER.warn("Port already exist.");
                 return HttpURLConnection.HTTP_FORBIDDEN;
             } else {
-                if (deviceID != null) {
+                if (deviceID != null && !(("").equals(deviceID))) {
                     virtualMachine = (VirtualMachine) apiConnector.findById(VirtualMachine.class, deviceID);
                     LOGGER.debug("virtualMachine:   " + virtualMachine);
                     if (virtualMachine == null) {
@@ -172,7 +168,7 @@ public class PortHandler implements INeutronPortAware {
                     virtualMachineInterface.setVirtualNetwork(virtualNetwork);
                     macAddressesType.addMacAddress(portMACAddress);
                     virtualMachineInterface.setMacAddresses(macAddressesType);
-                    if (deviceID != null) {
+                    if (deviceID != null && !(("").equals(deviceID))) {
                         virtualMachineInterface.setVirtualMachine(virtualMachine);
                     }
                     boolean virtualMachineInterfaceCreated = apiConnector.create(virtualMachineInterface);
@@ -271,7 +267,6 @@ public class PortHandler implements INeutronPortAware {
     private int deletePort(NeutronPort neutronPort) {
         String portID = neutronPort.getID();
         String deviceID = neutronPort.getDeviceID();
-        LOGGER.info("neutronPort >>>>" + neutronPort);
         VirtualMachineInterface virtualMachineInterface = null;
         VirtualMachine virtualMachine = null;
         InstanceIp instanceIP = null;
@@ -296,7 +291,7 @@ public class PortHandler implements INeutronPortAware {
                 virtualMachine = (VirtualMachine) apiConnector.findById(VirtualMachine.class, deviceID);
                 if (virtualMachine != null) {
                     virtualMachineInterfaceBackRefs = virtualMachine.getVirtualMachineInterfaceBackRefs();
-                    if (virtualMachineInterfaceBackRefs.size() == 0) {
+                    if (virtualMachineInterfaceBackRefs == null) {
                         apiConnector.delete(virtualMachine);
                     }
                 }
@@ -348,10 +343,6 @@ public class PortHandler implements INeutronPortAware {
         VirtualMachineInterface virtualMachineInterface = null;
         if (deltaPort == null || originalPort == null) {
             LOGGER.error("Neutron Port objects can't be null..");
-            return HttpURLConnection.HTTP_BAD_REQUEST;
-        }
-        if (("").equals(deltaPort.getName())) {
-            LOGGER.error("Neutron Port name can't be empty..");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
         if (deltaPort.getMacAddress() != null) {
@@ -444,35 +435,38 @@ public class PortHandler implements INeutronPortAware {
             LOGGER.error("Subnet UUID must exist in the network..");
             return HttpURLConnection.HTTP_BAD_REQUEST;
         }
-
         if (deviceID != null) {
-            deviceID = UUID.fromString(deltaPort.getDeviceID()).toString();
-            try {
-                virtualMachine = (VirtualMachine) apiConnector.findById(VirtualMachine.class, deviceID);
-            } catch (Exception e) {
-                LOGGER.error("Exception:     " + e);
-                return HttpURLConnection.HTTP_INTERNAL_ERROR;
-            }
-            if (virtualMachine == null) {
-                virtualMachine = new VirtualMachine();
-                virtualMachine.setName(deviceID);
-                virtualMachine.setUuid(deviceID);
-                boolean virtualMachineCreated = apiConnector.create(virtualMachine);
-                LOGGER.debug("virtualMachineCreated: " + virtualMachineCreated);
-                if (!virtualMachineCreated) {
-                    LOGGER.warn("virtualMachine creation failed..");
+            if (("").equals(deviceID)) {
+                virtualMachineInterface.clearVirtualMachine();
+            } else {
+                deviceID = UUID.fromString(deltaPort.getDeviceID()).toString();
+                try {
+                    virtualMachine = (VirtualMachine) apiConnector.findById(VirtualMachine.class, deviceID);
+                } catch (Exception e) {
+                    LOGGER.error("Exception:     " + e);
                     return HttpURLConnection.HTTP_INTERNAL_ERROR;
                 }
-                LOGGER.info("virtualMachine : " + virtualMachine.getName() + "  having UUID : " + virtualMachine.getUuid()
-                        + "  sucessfully created...");
+                if (virtualMachine == null) {
+                    virtualMachine = new VirtualMachine();
+                    virtualMachine.setName(deviceID);
+                    virtualMachine.setUuid(deviceID);
+                    boolean virtualMachineCreated = apiConnector.create(virtualMachine);
+                    LOGGER.debug("virtualMachineCreated: " + virtualMachineCreated);
+                    if (!virtualMachineCreated) {
+                        LOGGER.warn("virtualMachine creation failed..");
+                        return HttpURLConnection.HTTP_INTERNAL_ERROR;
+                    }
+                    LOGGER.info("virtualMachine : " + virtualMachine.getName() + "  having UUID : " + virtualMachine.getUuid()
+                            + "  sucessfully created...");
+                }
+                virtualMachineInterface.setVirtualMachine(virtualMachine);
             }
-            virtualMachineInterface.setVirtualMachine(virtualMachine);
         }
         if (portName != null) {
             virtualMachineInterface.setDisplayName(portName);
         }
-        if (deviceID != null || portName != null || instanceIpUpdate) {
-            if (deviceID != null || portName != null) {
+        if ((deviceID != null && !(("").equals(deviceID))) || portName != null || instanceIpUpdate) {
+            if ((deviceID != null && !(("").equals(deviceID))) || portName != null) {
                 boolean portUpdate = apiConnector.update(virtualMachineInterface);
                 if (!portUpdate) {
                     LOGGER.warn("Port Updation failed..");
@@ -498,8 +492,12 @@ public class PortHandler implements INeutronPortAware {
         try {
             VirtualMachineInterface virtualMachineInterface;
             virtualMachineInterface = (VirtualMachineInterface) apiConnector.findById(VirtualMachineInterface.class, neutronPort.getPortUUID());
-            if (neutronPort.getName().matches(virtualMachineInterface.getDisplayName())
-                    && neutronPort.getDeviceID().matches(virtualMachineInterface.getVirtualMachine().get(0).getUuid())) {   //TODO : Fix Null pointer exception (Dependent on VM Refs issue)
+            if (("").equals(neutronPort.getDeviceID())) { // TODO : VM Refs not getting cleared correctly - to be fixed
+                if (neutronPort.getName().matches(virtualMachineInterface.getDisplayName()) && virtualMachineInterface.getVirtualMachine() == null) {
+                    LOGGER.info("Port updatation verified....");
+                }
+            } else if (neutronPort.getName().matches(virtualMachineInterface.getDisplayName())
+                    && neutronPort.getDeviceID().matches(virtualMachineInterface.getVirtualMachine().get(0).getUuid())) {
                 LOGGER.info("Port updatation verified....");
             } else {
                 LOGGER.info("Port updatation failed....");
@@ -519,12 +517,18 @@ public class PortHandler implements INeutronPortAware {
      */
     private String uuidFormater(String uuid) {
         String uuidPattern = null;
-        String id1 = uuid.substring(0, 8);
-        String id2 = uuid.substring(8, 12);
-        String id3 = uuid.substring(12, 16);
-        String id4 = uuid.substring(16, 20);
-        String id5 = uuid.substring(20, 32);
-        uuidPattern = (id1 + "-" + id2 + "-" + id3 + "-" + id4 + "-" + id5);
+        try {
+            String id1 = uuid.substring(0, 8);
+            String id2 = uuid.substring(8, 12);
+            String id3 = uuid.substring(12, 16);
+            String id4 = uuid.substring(16, 20);
+            String id5 = uuid.substring(20, 32);
+            uuidPattern = (id1 + "-" + id2 + "-" + id3 + "-" + id4 + "-" + id5);
+
+        } catch (Exception e) {
+            LOGGER.error("UUID is not in correct format ");
+            LOGGER.error("Exception :" + e);
+        }
         return uuidPattern;
     }
 }
