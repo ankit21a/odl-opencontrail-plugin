@@ -190,6 +190,7 @@ public class SubnetHandler implements INeutronSubnetAware {
             if (vn.getNetworkIpam() != null) {
                 for (ObjectReference<VnSubnetsType> ref : vn.getNetworkIpam()) {
                     vnSubnetsType = ref.getAttr();
+                    vnSubnetsType.addIpamSubnets(subnetType, subnet.getGatewayIP(), subnet.getSubnetUUID());
                 }
             } else {
                 vnSubnetsType.addIpamSubnets(subnetType, subnet.getGatewayIP(), subnet.getSubnetUUID());
